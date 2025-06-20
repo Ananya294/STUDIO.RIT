@@ -1,0 +1,28 @@
+# Logs
+*.log
+
+# Dependency directories
+node_modules/
+venv/
+
+# Build output
+/dist/
+/build/
+
+# IDE files
+.vscode/
+.idea/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
+
+# Compiled code
+*.pyc
+*.o
+
+# Ignore everything in the "temp" directory and its subdirectories
+/temp/
