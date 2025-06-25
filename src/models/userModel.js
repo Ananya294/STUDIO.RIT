@@ -80,7 +80,7 @@ UserSchema.methods.matchPassword = async function(enteredPassword){
 UserSchema.methods.hasPermission = function(requireRole) {
     const roles = Object.values(ROLES);
     const userRoleIndex = roles.indexOf(this.role);
-    const requireRoleIndex = roles.indexOf(requireRole);
+    const requiredRoleIndex = roles.indexOf(requireRole);
 
     return userRoleIndex >= requiredRoleIndex;
 };

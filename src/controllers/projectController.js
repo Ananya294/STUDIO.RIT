@@ -10,9 +10,23 @@ const createProject = async (req, res) => {
             startDate,
             endDate,
             coordinator,
-            departsments,
+            departments,
             tags
         } = req.body;
+
+        //validate end date after start date
+        if(startDate && endDate)
+        {
+            const start = new Date(startDate);
+            const end = new Date(endDate);
+
+            if(end <= start)
+            {
+                return res.status(400).json({
+                    message: 'end date must be after start date'
+                });
+            }
+        }
 
         //validate coordinator exits and has apt roles
         const coordinatorUser = await User.findById(coordinator);
@@ -31,7 +45,7 @@ const createProject = async (req, res) => {
             title,
             description,
             startDate,
-            endDates,
+            endDate,
             createdBy: req.user.id,
             coordinator,
             departments: departments || [],
@@ -99,7 +113,7 @@ const getProjects = async (req, res) => {
             .populate('createdBy','name email')
             .populate('coordinator', 'name email')
             .populate('teamMembers.user', 'name email')
-            .sort({ cratedAt: -1});
+            .sort({ createdAt: -1});
         
             res.json({
                 count: projects.length,
@@ -114,14 +128,15 @@ const getProjects = async (req, res) => {
 //get single project by id
 const getProjectById = async (req, res) => {
     try {
-        const projects = await Project.findById(req.params.id)
+        const project = await Project.findById(req.params.id)
             .populate('createdBy', 'name email')
             .populate('coordinator', 'name email')
             .populate('teamMembers.user', 'name email')
             .populate('notes.addedBy', 'name email')
+            .populate('references.addedBy', 'name email')
 
         if(!project) {
-            return res.status(400).json({ message: "Project not found" });
+            return res.status(404).json({ message: "Project not found" });
         }
 
         //access control - check if user is authorized to view this project
@@ -231,9 +246,9 @@ const deleteProject = async (req,res) => {
         }
 
         //delete project
-        await project.remove();
+        await Project.findByIdAndDelete(req.params.id);
 
-        res.json({ message: "Project delted successfully " });
+        res.json({ message: "Project delted successfully" });
  
     } catch (error) {
         console.error("Delete project error:", error);
@@ -253,10 +268,10 @@ const addTeamMember = async (req, res) => {
             return res.status(404).json({ message: "Project not found" });
         }
 
-        //access control = only coord, crator or admin can add members
+        //access control = only coord, creator or admin can add members
         const isCreator = project.createdBy.toString() === req.user.id.toString();
         const isCoordinator = project.coordinator.toString() === req.user.id.toString();
-        const isAdmin = req.user.role == ROLES.ADMIN;
+        const isAdmin = req.user.role === ROLES.ADMIN;
 
         if( !(isCoordinator || isCreator || isAdmin)) {
             return res.status(403).json({
@@ -272,7 +287,7 @@ const addTeamMember = async (req, res) => {
 
         //check if user is already a team member
         if (project.isTeamMember(userId)) {
-            return res.status(400).json({ message: "User is not a team member"});
+            return res.status(404).json({ message: "User is already a team member"});
         }
 
         //add user to team
@@ -286,11 +301,16 @@ const addTeamMember = async (req, res) => {
         //save project
         await project.save();
 
+        //populate and return updated project
+        const updatedProject = await Project.findById(req.params.id)
+            .populate('teamMembers.user', 'name email');
+
         res.json({
-            message: " team member added successfully", project
+            message: " team member added successfully", 
+            project: updatedProject
         });
     } catch (error) {
-        console.error("remove team member error",error);
+        console.error("add team member error",error);
         res.status(500).json({ message: "Server error while removing team meber" });
 
     }
@@ -300,7 +320,7 @@ const addTeamMember = async (req, res) => {
 //remove team members from project
 const removeTeamMember = async (req, res) => {
     try {
-        const { userId, role } = req.body;
+        const { userId } = req.body;
 
         //find project
         const project = await Project.findById(req.params.id);
@@ -312,7 +332,7 @@ const removeTeamMember = async (req, res) => {
         //access control = only coord, crator or admin can add members
         const isCreator = project.createdBy.toString() === req.user.id.toString();
         const isCoordinator = project.coordinator.toString() === req.user.id.toString();
-        const isAdmin = req.user.role == ROLES.ADMIN;
+        const isAdmin = req.user.role === ROLES.ADMIN;
 
         if( !(isCoordinator || isCreator || isAdmin)) {
             return res.status(403).json({
@@ -327,21 +347,27 @@ const removeTeamMember = async (req, res) => {
         }
 
         //check if user is already a team member
-        if (project.isTeamMember(userId)) {
+        if (!project.isTeamMember(userId)) {
             return res.status(400).json({ message: "User is not a team member"});
         }
 
         //remove user from team
         project.teamMembers = project.teamMembers.filter(
-            member => member.user.toString() != userId
+            member => member.user.toString() !== userId
         );
         
 
         //save project
         await project.save();
 
+        //populate and return updated project
+        const updatedProject = await Project.findById(req.params.id)
+            .populate('teamMembers.user','name email');
+
+
         res.json({
-            message: " team member added successfully", project
+            message: " team member removed successfully", 
+            project: updatedProject
         });
     } catch (error) {
         console.error("remove team member error",error);
@@ -368,8 +394,9 @@ const addProjectNote = async (req, res) => {
         const isTeamMember = project.isTeamMember(req.user.id);
         const isCoordinator = project.coordinator.toString() === req.user.id.toString();
         const isAdmin = req.user.role === ROLES.ADMIN;
+        const isCreator = project.createdBy.toString() === req.user.id.toString();
 
-        if (!(isTeamMember || isCoordinator || isAdmin)) {
+        if (!(isTeamMember || isCoordinator || isAdmin || isCreator)) {
             return res.status(403).json({ 
                 message: 'Access denied - you must be a team member to add notes' 
             });
@@ -397,7 +424,7 @@ const addProjectNote = async (req, res) => {
         })
     } catch (error) {
         console.error('Add note error:', error);
-        res.staus(500).json({message: 'Server error while adding note'});
+        res.status(500).json({message: 'Server error while adding note'});
     }
 };
 
@@ -406,6 +433,12 @@ const addProjectNote = async (req, res) => {
 const addProjectReference = async (req, res) => {
     try {
         const { title, url, type } = req.body;
+
+        //validate required field
+        if(!title || !url)
+        {
+            return res.status(400).json({ message: 'Title and URL are required' });
+        }
 
         //find project
         const project = await Project.findById(req.params.id);
@@ -418,8 +451,9 @@ const addProjectReference = async (req, res) => {
         const isTeamMember = project.isTeamMember(req.user.id);
         const isCoordinator = project.coordinator.toString() === req.user.id.toString();
         const isAdmin = req.user.role === ROLES.ADMIN; 
+        const isCreator = project.createdBy.toString() === req.user.id.toString();
 
-        if (!(isTeamMember || isCoordinator || isAdmin)) {
+        if (!(isTeamMember || isCoordinator || isAdmin || isCreator)) {
             return res.status(403).json({ 
                 message: 'Access denied - you must be a team member to add references' 
             });
@@ -429,7 +463,7 @@ const addProjectReference = async (req, res) => {
         project.references.push({
             title,
             url,
-            type,
+            type: type || 'link',
             addedAt: new Date(),
             addedBy: req.user.id
         });
@@ -437,9 +471,14 @@ const addProjectReference = async (req, res) => {
         //save project
         await project.save();
 
+        const updatedProject = await Project.findById(req.params.id)
+            .populate('references.addedBy', 'name email');
+
+        const addedReference = updatedProject.references[updatedProject.references.length - 1];
+
         res.json({
-            message: 'Refrence added succesfully',
-            project
+            message: 'Reference added succesfully',
+            reference: addedReference
         });
 
     } catch (error) {

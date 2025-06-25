@@ -34,6 +34,6 @@ router.delete('/:id/team', projectController.removeTeamMember);
 router.post('/:id/notes', projectController.addProjectNote);
 
 //project references
-router.post('/:id/references',projectController.addProjectRefrence);
+router.post('/:id/references',projectController.addProjectReference);
 
 module.exports = router;
